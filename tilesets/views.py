@@ -39,6 +39,7 @@ import tilesets.suggestions as tsu
 from tilesets.management.commands.ingest_tileset import ingest
 
 import os.path as op
+import os
 
 import rest_framework.exceptions as rfe
 import rest_framework.parsers as rfp
@@ -650,7 +651,7 @@ def link_tile(request):
         JsonResponse: A response containing the uuid of the newly added tileset
     '''
     body = json.loads(request.body.decode('utf8'))
-       
+
 
 
     media_base_path = op.realpath(hss.MEDIA_ROOT)
@@ -682,7 +683,7 @@ def link_tile(request):
     return JsonResponse({'uuid': str(obj.uuid)}, status=201)
 
 @api_view(['POST'])
-@authentication_classes((CsrfExemptSessionAuthentication, BasicAuthentication))
+# @authentication_classes((CsrfExemptSessionAuthentication, BasicAuthentication))
 def ingest_tileset_url(request):
     '''
     Ingest a tileset from a url downloaded file, uploading it to the media directory
@@ -695,32 +696,29 @@ def ingest_tileset_url(request):
             filetype: A filetype for the tileset
             datatype: A datatype for the tileset
             uid: A unique identifier for the tileset
-            coordSystem:             
+            coordSystem:
 
     Returns:
         HttpResponse code for the request, 200 if the action is successful
     '''
-    url = request.body['fileurl']
-    uid = request.body['uid']
-    name = request.body['name']
-    filename = request.body['filename']
-    datatype = request.body['datatype']
-    filetype = request.body['filetype']
-    coordSystem = request.body['coordSystem']
-    coordSystem2 = request.body['coordSystem2']
+    body = json.loads(request.body.decode('utf8'))
+
+    url = body.get('fileurl', None)
+    filename = body.get('filename', None)
 
     # validate the url to ensure we didn't get garbage
-    is_url = True #todo: replace with regex
+    is_url = url != None #todo: replace with regex
 
     if not is_url:
         error = ({
             'error': 'Specified url ({}) is not valid.'.format(url)
         })
         return JsonResponse(error, 400)
-    
-    
+
+
     media_base_path = op.realpath(hss.MEDIA_ROOT)
     destination_path = op.join(media_base_path, filename)
+    logger.warn('Destination %s' % destination_path)
 
     # ensure this space is not already reserved
     if op.exists(destination_path):
@@ -728,28 +726,30 @@ def ingest_tileset_url(request):
             'error': 'Speicifed file ({}) already exists.'.format(filename)
         })
 
-    # get the file and move it to the temp directory
-    url_file = urllib.URLopener()
-    url_file.retrieve(url, destination_path)
-
     try:
+        if not op.exists(media_base_path):
+            os.makedirs(media_base_path)
+        # get the file and move it to the media directory
+        urllib.request.urlretrieve(url, destination_path)
         # ingest the file by calling the ingest_tileset command
-        ingest(({
-            filename,
-            datatype,
-            filetype,
-            coordSystem,
-            coordSystem2,
-            name,
-            uid
-        }))
+        ingest(
+            filename=filename,
+            datatype=body.get('datatype', None),
+            filetype=body.get('filetype', None),
+            coordSystem=body.get('coordSystem', ''),
+            coordSystem2=body.get('coordSystem2', ''),
+            uid=body.get('uid', None),
+            name=body.get('name', None),
+            no_upload=True
+        )
     except Exception as e:
+        logger.error('Problem ingesting file: %s' % e)
         return JsonResponse(({
             'error': str(e)
         }), 500)
 
-    return JsonResponse({'Success'}, 200)
-    
+    return HttpResponse("Success", content_type="text/plain")
+
 
 
 
